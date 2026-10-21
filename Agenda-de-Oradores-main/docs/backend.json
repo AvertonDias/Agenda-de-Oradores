@@ -1,0 +1,132 @@
+
+{
+  "entities": {
+    "UserProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserProfile",
+      "type": "object",
+      "description": "Perfil público do usuário para identificação no sistema.",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["displayName", "email"]
+    },
+    "Congregation": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Congregation",
+      "type": "object",
+      "description": "Representa uma congregação anfitriã ou vizinha.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "Nome da congregação." },
+        "address": { "type": "string", "description": "Endereço físico." },
+        "coordinates": { "type": "string", "description": "Latitude e Longitude." },
+        "coordinators": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "phone": { "type": "string" }
+            }
+          }
+        },
+        "meetingSchedule": { "type": "string", "description": "Dia e hora da reunião." },
+        "adminUid": { "type": "string", "description": "UID do dono do workspace (apenas na congregação raiz)." },
+        "authorizedUsers": { "type": "array", "items": { "type": "string" }, "description": "Lista de UIDs autorizados (ajudantes)." }
+      },
+      "required": ["name", "address", "meetingSchedule"]
+    },
+    "Speaker": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Speaker",
+      "type": "object",
+      "description": "Representa um orador no workspace.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "homeCongregationId": { "type": "string", "description": "ID da congregação de origem (dentro do workspace)." },
+        "availableTopics": { "type": "array", "items": { "type": "string" } },
+        "onlyLocal": { "type": "boolean", "description": "Se verdadeiro, o orador não faz discursos fora da congregação local." }
+      },
+      "required": ["name", "phoneNumber", "homeCongregationId", "availableTopics"]
+    },
+    "ScheduledTalk": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ScheduledTalk",
+      "type": "object",
+      "description": "Agendamento de discurso.",
+      "properties": {
+        "id": { "type": "string" },
+        "congregationId": { "type": "string", "description": "ID da congregação (host)." },
+        "speakerId": { "type": "string" },
+        "topic": { "type": "string" },
+        "dateTime": { "type": "string", "format": "date-time" }
+      },
+      "required": ["congregationId", "speakerId", "topic", "dateTime"]
+    },
+    "Event": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Event",
+      "type": "object",
+      "description": "Eventos especiais da congregação.",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "description": "Nome do evento." },
+        "description": { "type": "string", "description": "Detalhes do evento." },
+        "date": { "type": "string", "format": "date-time", "description": "Data de início ou data única." },
+        "endDate": { "type": "string", "format": "date-time", "description": "Data de término (opcional)." },
+        "type": { "type": "string", "enum": ["Assembleia", "Congresso", "Visita do Superintendente", "Celebração", "Outro"] }
+      },
+      "required": ["title", "date", "type"]
+    },
+    "Invite": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Invite",
+      "type": "object",
+      "description": "Convite único para novos ajudantes.",
+      "properties": {
+        "id": { "type": "string" },
+        "congregationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["congregationId", "createdAt"]
+    }
+  },
+  "auth": {
+    "providers": ["google.com", "password"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Perfis de usuários registrados no sistema."
+    },
+    "/congregations/{congregationId}": {
+      "schema": "Congregation",
+      "description": "Congregações gerenciadas (Workspaces)."
+    },
+    "/congregations/{congregationId}/neighbors/{neighborId}": {
+      "schema": "Congregation",
+      "description": "Lista de congregações vizinhas cadastradas pelo usuário."
+    },
+    "/congregations/{congregationId}/speakers/{speakerId}": {
+      "schema": "Speaker",
+      "description": "Lista de oradores cadastrados no workspace."
+    },
+    "/congregations/{congregationId}/scheduledTalks/{talkId}": {
+      "schema": "ScheduledTalk",
+      "description": "Calendário de discursos do workspace."
+    },
+    "/congregations/{congregationId}/events/{eventId}": {
+      "schema": "Event",
+      "description": "Eventos especiais da congregação."
+    },
+    "/congregations/{congregationId}/invites/{inviteId}": {
+      "schema": "Invite",
+      "description": "Tokens de convite único."
+    }
+  }
+}

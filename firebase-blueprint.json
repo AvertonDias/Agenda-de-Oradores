@@ -1,0 +1,32 @@
+{
+  "entities": {
+    "congregation": {
+      "title": "Congregação",
+      "description": "Dados da congregação",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "speaker": {
+      "title": "Orador",
+      "description": "Dados do orador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/congregacoes/{congregationId}": {
+      "schema": "congregation",
+      "description": "Coleção de congregações"
+    },
+    "/oradores/{speakerId}": {
+      "schema": "speaker",
+      "description": "Coleção de oradores"
+    }
+  }
+}

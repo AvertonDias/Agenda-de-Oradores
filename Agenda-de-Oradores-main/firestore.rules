@@ -1,0 +1,41 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Função auxiliar para verificar se o usuário está logado
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Regras para a coleção de usuários
+    match /users/{userId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // Regras para a coleção de congregações
+    match /congregations/{congregationId} {
+      // Permitir que qualquer pessoa veja os dados básicos de uma congregação se tiver o ID direto.
+      // Isso é essencial para que a página de convite mostre o nome da congregação antes do login.
+      allow get: if true;
+      
+      // Permitir verificar convites específicos publicamente
+      match /invites/{inviteId} {
+        allow get: if true;
+        allow delete: if isSignedIn();
+      }
+      
+      // Outras operações de leitura (como listagem) e escrita exigem autenticação
+      allow list, create, update, delete: if isSignedIn();
+      
+      // Subcoleções (oradores, discursos, vizinhos, eventos) permanecem protegidas
+      match /{allSubcollections=**} {
+        allow read, create, update, delete: if isSignedIn();
+      }
+    }
+
+    // Regra de fallback para garantir que tudo o mais exija login
+    match /{document=**} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+  }
+}

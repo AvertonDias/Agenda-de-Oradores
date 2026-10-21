@@ -1,0 +1,6 @@
+{
+  "name": "Agenda de Oradores",
+  "description": "Gestão de discursos públicos e intercâmbio de oradores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
