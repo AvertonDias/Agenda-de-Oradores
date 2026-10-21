@@ -23,6 +23,19 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      proxy: {
+        '/api/jw-meeting': {
+          target: 'https://hub.jw.org',
+          changeOrigin: true,
+          secure: true,
+          rewrite: (path) => path.replace(/^\/api\/jw-meeting/, '/meetings/api/meeting-search'),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept': 'application/json',
+            'Referer': 'https://hub.jw.org/meetings/',
+          },
+        },
+      },
     },
   };
 });

@@ -31,6 +31,7 @@ export type Congregation = {
   adminUid?: string;
   authorizedUsers?: string[];
   settings?: CongregationSettings;
+  jwUrl?: string;
 };
 
 export type ScheduledTalk = {

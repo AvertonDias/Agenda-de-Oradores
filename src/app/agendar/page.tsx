@@ -45,6 +45,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Calendar as UICalendar, type CalendarDayState } from '@/components/ui/calendar';
@@ -66,7 +67,10 @@ import {
   Contact,
   X,
   Phone,
-  ShieldAlert
+  ShieldAlert,
+  Building2,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { cn, formatPhoneNumber, cleanRawNumber } from '@/lib/utils';
 import { HouseRoofIcon } from '@/components/icons';
@@ -119,6 +123,191 @@ const isMeetingDay = (date: Date, cong: Congregation | null) => {
   return schedule.includes(dayNames[day]) || hasAccentlessSabado;
 };
 
+const SearchableCongregationSelect = ({
+  value,
+  onChange,
+  label,
+  congregations,
+  isLocked,
+  onToggleLock,
+  myCongId,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  congregations: Congregation[];
+  isLocked: boolean;
+  onToggleLock: () => void;
+  myCongId?: string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const selectedCong = congregations.find(c => c.id === value);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!q) return congregations;
+    return congregations.filter(c => {
+      const name = (c.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const schedule = (c.meetingSchedule || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const addr = (c.address || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return name.includes(q) || schedule.includes(q) || addr.includes(q);
+    });
+  }, [congregations, search]);
+
+  return (
+    <FormItem className="flex flex-col">
+      <div className="flex items-center justify-between mb-1">
+        <FormLabel className="font-bold">{label}</FormLabel>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "h-7 px-2.5 text-xs font-bold gap-1.5 rounded-full transition-all border",
+            isLocked
+              ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 shadow-xs"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+          onClick={onToggleLock}
+          title={isLocked ? "Congregação travada (não limpa após agendar). Clique para destravar." : "Travar esta congregação para os próximos agendamentos"}
+        >
+          {isLocked ? (
+            <>
+              <Lock className="h-3.5 w-3.5 text-amber-700" />
+              <span>Travada</span>
+            </>
+          ) : (
+            <>
+              <Unlock className="h-3.5 w-3.5 opacity-60" />
+              <span>Travar</span>
+            </>
+          )}
+        </Button>
+      </div>
+
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <PopoverTrigger asChild>
+          <FormControl>
+            <Button
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={isOpen}
+              className={cn(
+                "w-full justify-between font-normal h-11 px-3 bg-background transition-colors",
+                !value && "text-muted-foreground",
+                isLocked && "border-amber-400 bg-amber-50/20"
+              )}
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                <Building2 className={cn("h-4 w-4 shrink-0", isLocked ? "text-amber-600" : "text-primary opacity-70")} />
+                <span className="truncate font-semibold text-foreground text-sm">
+                  {selectedCong ? (
+                    <>
+                      {selectedCong.name}
+                      {selectedCong.id === myCongId ? ' (Minha)' : ''}
+                    </>
+                  ) : (
+                    "Selecione a congregação"
+                  )}
+                </span>
+                {isLocked && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 text-amber-800 border-amber-300 font-bold shrink-0 ml-1">
+                    <Lock className="h-2.5 w-2.5 mr-0.5" /> Fixada
+                  </Badge>
+                )}
+              </div>
+              <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+            </Button>
+          </FormControl>
+        </PopoverTrigger>
+        <PopoverContent
+          className="z-[110] w-[var(--radix-popover-trigger-width)] min-w-[290px] p-0 shadow-2xl max-w-[95vw] overflow-hidden"
+          align="start"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <div className="flex items-center px-3 border-b bg-muted/20">
+            <Search className="mr-2 h-4 w-4 opacity-50 shrink-0" />
+            <Input
+              placeholder="Buscar por nome ou dia da reunião..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border-none focus-visible:ring-0 shadow-none h-10 text-sm bg-transparent"
+            />
+            {search && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0"
+                onClick={() => setSearch('')}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+
+          <div className="px-3 py-1.5 border-b bg-muted/10 flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+            <span>{filtered.length} congregação(ões)</span>
+            {isLocked && (
+              <span className="text-amber-700 font-bold flex items-center gap-1 text-[10px]">
+                <Lock className="h-3 w-3" /> Modo fixado ativo
+              </span>
+            )}
+          </div>
+
+          <ScrollArea className="h-64 p-1">
+            <div className="space-y-1">
+              {filtered.length === 0 ? (
+                <div className="p-4 text-center text-xs text-muted-foreground italic">
+                  Nenhuma congregação encontrada para "{search}".
+                </div>
+              ) : (
+                filtered.map(c => {
+                  const isSelected = c.id === value;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={cn(
+                        "w-full text-left px-3 py-2.5 rounded-lg hover:bg-muted text-sm transition-colors flex items-center justify-between gap-2",
+                        isSelected ? "bg-primary/10 text-primary font-bold" : "hover:bg-muted"
+                      )}
+                      onClick={() => {
+                        onChange(c.id);
+                        setIsOpen(false);
+                        setSearch('');
+                      }}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-xs leading-tight text-foreground flex items-center gap-1.5">
+                          <HighlightedText text={c.name} highlight={search} />
+                          {c.id === myCongId && (
+                            <span className="text-[10px] text-muted-foreground font-normal">(Minha)</span>
+                          )}
+                        </div>
+                        {c.meetingSchedule && (
+                          <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                            🗓 {c.meetingSchedule}
+                          </div>
+                        )}
+                      </div>
+                      <Check className={cn("h-4 w-4 shrink-0", isSelected ? "opacity-100 text-primary" : "opacity-0")} />
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </ScrollArea>
+        </PopoverContent>
+      </Popover>
+      <FormMessage />
+    </FormItem>
+  );
+};
+
 export default function AgendarPage() {
   const [activeTab, setActiveTab] = useState('receber');
   const [isLoading, setIsLoading] = useState(false);
@@ -142,6 +331,9 @@ export default function AgendarPage() {
     dateObj: Date;
     congregation: Congregation;
   } | null>(null);
+
+  const [isCongLocked, setIsCongLocked] = useState(false);
+  const [lockedCongId, setLockedCongId] = useState<string | null>(null);
 
   const { toast } = useToast();
   const firestore = useFirestore();
@@ -191,13 +383,43 @@ export default function AgendarPage() {
     return [...neighbors].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [neighbors]);
 
+  const toggleCongLock = (currentValue: string) => {
+    if (!currentValue) {
+      toast({
+        variant: "default",
+        title: "Selecione uma congregação",
+        description: "Escolha uma congregação antes de ativar a trava.",
+      });
+      return;
+    }
+
+    if (isCongLocked && lockedCongId === currentValue) {
+      setIsCongLocked(false);
+      setLockedCongId(null);
+      toast({
+        title: "Congregação destravada",
+        description: "O campo voltará ao comportamento padrão após agendar.",
+      });
+    } else {
+      setIsCongLocked(true);
+      setLockedCongId(currentValue);
+      const name = neighborsMap[currentValue]?.name || 'Congregação';
+      toast({
+        title: "Congregação travada!",
+        description: `${name} continuará selecionada nos próximos agendamentos.`,
+      });
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'receber' && myCong) {
-      form.reset({ hostCongregationId: myCong.id, originCongregationId: '', speakerId: '', topic: '', time: '' });
+      const originId = isCongLocked && lockedCongId ? lockedCongId : '';
+      form.reset({ hostCongregationId: myCong.id, originCongregationId: originId, speakerId: '', topic: '', time: '' });
     } else if (activeTab === 'saindo' && myCong) {
-      form.reset({ originCongregationId: myCong.id, hostCongregationId: '', speakerId: '', topic: '', time: '' });
+      const hostId = isCongLocked && lockedCongId ? lockedCongId : '';
+      form.reset({ originCongregationId: myCong.id, hostCongregationId: hostId, speakerId: '', topic: '', time: '' });
     }
-  }, [activeTab, myCong, form]);
+  }, [activeTab, myCong]);
 
   const filteredSpeakers = useMemo(() => {
     let list = (speakers || []).filter(s => s.homeCongregationId === form.watch('originCongregationId'));
@@ -442,9 +664,17 @@ export default function AgendarPage() {
       });
     }
 
+    const preservedHost = activeTab === 'receber' 
+      ? myCong.id 
+      : (isCongLocked && lockedCongId ? lockedCongId : '');
+
+    const preservedOrigin = activeTab === 'saindo' 
+      ? myCong.id 
+      : (isCongLocked && lockedCongId ? lockedCongId : '');
+
     form.reset({ 
-      hostCongregationId: activeTab === 'receber' ? myCong.id : '', 
-      originCongregationId: activeTab === 'saindo' ? myCong.id : '', 
+      hostCongregationId: preservedHost, 
+      originCongregationId: preservedOrigin, 
       speakerId: '', 
       topic: '', 
       time: hostCong?.meetingSchedule?.split(', ')?.[1] || '' 
@@ -525,44 +755,159 @@ export default function AgendarPage() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <FormField control={form.control} name="hostCongregationId" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-bold">Onde será?</FormLabel>
-                      {activeTab === 'receber' ? (
-                        <div className="flex h-10 items-center justify-between rounded-md border bg-muted px-3 text-sm font-bold opacity-80 cursor-not-allowed">
-                          {myCong.name} (Minha)
+                    activeTab === 'receber' ? (
+                      <FormItem>
+                        <FormLabel className="font-bold">Onde será?</FormLabel>
+                        <div className="flex h-11 items-center justify-between rounded-md border bg-muted px-3 text-sm font-bold opacity-80 cursor-not-allowed">
+                          <span>{myCong.name} (Minha)</span>
                           <HouseRoofIcon className="h-4 w-4 opacity-50" />
                         </div>
-                      ) : (
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl><SelectTrigger type="button"><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                          <SelectContent>
-                            {[myCong, ...sortedNeighbors].map(n => <SelectItem key={n.id} value={n.id}>{n.name}{n.id === myCong.id ? ' (Minha)' : ''}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
+                        <FormMessage />
+                      </FormItem>
+                    ) : (
+                      <SearchableCongregationSelect
+                        value={field.value}
+                        onChange={(val) => {
+                          field.onChange(val);
+                          if (isCongLocked) setLockedCongId(val);
+                        }}
+                        label="Onde será?"
+                        congregations={[myCong, ...sortedNeighbors]}
+                        isLocked={isCongLocked && lockedCongId === field.value}
+                        onToggleLock={() => toggleCongLock(field.value)}
+                        myCongId={myCong.id}
+                      />
+                    )
+                  )} />
+                  <FormField control={form.control} name="originCongregationId" render={({ field }) => (
+                    activeTab === 'saindo' ? (
+                      <FormItem>
+                        <FormLabel className="font-bold">Origem do orador?</FormLabel>
+                        <div className="flex h-11 items-center justify-between rounded-md border bg-muted px-3 text-sm font-bold opacity-80 cursor-not-allowed">
+                          <span>{myCong.name} (Minha)</span>
+                          <HouseRoofIcon className="h-4 w-4 opacity-50" />
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    ) : (
+                      <SearchableCongregationSelect
+                        value={field.value}
+                        onChange={(val) => {
+                          field.onChange(val);
+                          if (isCongLocked) setLockedCongId(val);
+                        }}
+                        label="Origem do orador?"
+                        congregations={[myCong, ...sortedNeighbors]}
+                        isLocked={isCongLocked && lockedCongId === field.value}
+                        onToggleLock={() => toggleCongLock(field.value)}
+                        myCongId={myCong.id}
+                      />
+                    )
+                  )} />
+                </div>
+                {/* 2. Data e Horário */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <FormField control={form.control} name="date" render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel className="font-bold">Data</FormLabel>
+                      <Dialog open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                        <FormControl>
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            className={cn("w-full pl-3 text-left font-normal h-11", !field.value && "text-muted-foreground")} 
+                            onClick={() => {
+                              setActiveDate(field.value || new Date());
+                              setIsCalendarOpen(true);
+                            }}
+                          >
+                            {field.value ? format(field.value, "dd/MM/yyyy") : "Escolha"}
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                          </Button>
+                        </FormControl>
+                        <DialogContent className="sm:max-w-[425px] w-[95vw] p-0 border-none shadow-2xl overflow-hidden">
+                          <DialogHeader className="p-4 pb-0 flex flex-row items-center justify-between">
+                            <DialogTitle className="text-sm font-bold">Selecionar Data</DialogTitle>
+                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsCalendarOpen(false)}><X className="h-4 w-4" /></Button>
+                          </DialogHeader>
+                          <div className="flex flex-col items-center">
+                            <UICalendar 
+                              mode="single" 
+                              selected={activeDate} 
+                              onSelect={(d) => { 
+                                if (d) { 
+                                  setActiveDate(d); 
+                                  const info = getDayInfo(d); 
+                                  if (lastClick && isSameDay(lastClick.date, d) && (Date.now() - lastClick.time) < 300) { 
+                                    const validDay = isMeetingDay(d, hostCong);
+                                    if (!info?.isBlocked && validDay) { 
+                                      field.onChange(d); 
+                                      setIsCalendarOpen(false); 
+                                    } else if (!validDay) {
+                                      toast({
+                                        variant: "destructive",
+                                        title: "Dia de Reunião Diferente",
+                                        description: `A congregação ${hostCong?.name} se reúne aos ${hostCong?.meetingSchedule.split(',')[0]}s.`,
+                                      });
+                                    }
+                                  } 
+                                  setLastClick({ date: d, time: Date.now() }); 
+                                } 
+                              }} 
+                              locale={ptBR} 
+                              initialFocus 
+                              getDayInfo={getDayInfo} 
+                              defaultMonth={field.value || new Date()} 
+                              modifiers={{
+                                meetingDay: (d) => !!hostCong && isMeetingDay(d, hostCong)
+                              }}
+                              modifiersClassNames={{
+                                meetingDay: "ring-2 ring-primary/50 ring-inset"
+                              }}
+                            />
+                            {calendarFooter}
+                            <div className="p-3 pt-0 w-full bg-muted/20">
+                              <Button 
+                                type="button" 
+                                className="w-full h-11 font-bold bg-primary text-white" 
+                                disabled={!activeDate}
+                                onClick={() => {
+                                  if (activeDate) {
+                                    const info = getDayInfo(activeDate);
+                                    const validDay = isMeetingDay(activeDate, hostCong);
+                                    if (!info?.isBlocked && validDay) {
+                                      field.onChange(activeDate);
+                                      setIsCalendarOpen(false);
+                                    } else if (!validDay) {
+                                      toast({
+                                        variant: "destructive",
+                                        title: "Dia de Reunião Diferente",
+                                        description: `A congregação ${hostCong?.name} se reúne aos ${hostCong?.meetingSchedule.split(',')[0]}s.`,
+                                      });
+                                    } else {
+                                      toast({ variant: "destructive", title: "Conflito", description: "Esta vaga já está ocupada ou bloqueada." });
+                                    }
+                                  }
+                                }}
+                              >
+                                Definir Data
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <FormField control={form.control} name="originCongregationId" render={({ field }) => (
+                  <FormField control={form.control} name="time" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-bold">Origem do orador?</FormLabel>
-                      {activeTab === 'saindo' ? (
-                        <div className="flex h-10 items-center justify-between rounded-md border bg-muted px-3 text-sm font-bold opacity-80 cursor-not-allowed">
-                          {myCong.name} (Minha)
-                          <HouseRoofIcon className="h-4 w-4 opacity-50" />
-                        </div>
-                      ) : (
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl><SelectTrigger type="button"><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                          <SelectContent>
-                            {[myCong, ...sortedNeighbors].map(n => <SelectItem key={n.id} value={n.id}>{n.name}{n.id === myCong.id ? ' (Minha)' : ''}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <FormMessage />
+                      <FormLabel className="font-bold">Horário</FormLabel>
+                      <FormControl><Input type="time" {...field} disabled className="bg-muted opacity-80 cursor-not-allowed font-semibold h-11" /></FormControl>
                     </FormItem>
                   )} />
                 </div>
+
+                {/* 3. Orador e Tema do Discurso */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <FormField control={form.control} name="speakerId" render={({ field }) => (
                     <FormItem>
@@ -676,106 +1021,6 @@ export default function AgendarPage() {
                         </PopoverContent>
                       </Popover>
                       <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField control={form.control} name="date" render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel className="font-bold">Data</FormLabel>
-                      <Dialog open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                        <FormControl>
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            className={cn("w-full pl-3 text-left font-normal h-11", !field.value && "text-muted-foreground")} 
-                            onClick={() => {
-                              setActiveDate(field.value || new Date());
-                              setIsCalendarOpen(true);
-                            }}
-                          >
-                            {field.value ? format(field.value, "dd/MM/yyyy") : "Escolha"}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                        <DialogContent className="sm:max-w-[425px] w-[95vw] p-0 border-none shadow-2xl overflow-hidden">
-                          <DialogHeader className="p-4 pb-0 flex flex-row items-center justify-between">
-                            <DialogTitle className="text-sm font-bold">Selecionar Data</DialogTitle>
-                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsCalendarOpen(false)}><X className="h-4 w-4" /></Button>
-                          </DialogHeader>
-                          <div className="flex flex-col items-center">
-                            <UICalendar 
-                              mode="single" 
-                              selected={activeDate} 
-                              onSelect={(d) => { 
-                                if (d) { 
-                                  setActiveDate(d); 
-                                  const info = getDayInfo(d); 
-                                  if (lastClick && isSameDay(lastClick.date, d) && (Date.now() - lastClick.time) < 300) { 
-                                    const validDay = isMeetingDay(d, hostCong);
-                                    if (!info?.isBlocked && validDay) { 
-                                      field.onChange(d); 
-                                      setIsCalendarOpen(false); 
-                                    } else if (!validDay) {
-                                      toast({
-                                        variant: "destructive",
-                                        title: "Dia de Reunião Diferente",
-                                        description: `A congregação ${hostCong?.name} se reúne aos ${hostCong?.meetingSchedule.split(',')[0]}s.`,
-                                      });
-                                    }
-                                  } 
-                                  setLastClick({ date: d, time: Date.now() }); 
-                                } 
-                              }} 
-                              locale={ptBR} 
-                              initialFocus 
-                              getDayInfo={getDayInfo} 
-                              defaultMonth={field.value || new Date()} 
-                              modifiers={{
-                                meetingDay: (d) => !!hostCong && isMeetingDay(d, hostCong)
-                              }}
-                              modifiersClassNames={{
-                                meetingDay: "ring-2 ring-primary/50 ring-inset"
-                              }}
-                            />
-                            {calendarFooter}
-                            <div className="p-3 pt-0 w-full bg-muted/20">
-                              <Button 
-                                type="button" 
-                                className="w-full h-11 font-bold bg-primary text-white" 
-                                disabled={!activeDate}
-                                onClick={() => {
-                                  if (activeDate) {
-                                    const info = getDayInfo(activeDate);
-                                    const validDay = isMeetingDay(activeDate, hostCong);
-                                    if (!info?.isBlocked && validDay) {
-                                      field.onChange(activeDate);
-                                      setIsCalendarOpen(false);
-                                    } else if (!validDay) {
-                                      toast({
-                                        variant: "destructive",
-                                        title: "Dia de Reunião Diferente",
-                                        description: `A congregação ${hostCong?.name} se reúne aos ${hostCong?.meetingSchedule.split(',')[0]}s.`,
-                                      });
-                                    } else {
-                                      toast({ variant: "destructive", title: "Conflito", description: "Esta vaga já está ocupada ou bloqueada." });
-                                    }
-                                  }
-                                }}
-                              >
-                                Definir Data
-                              </Button>
-                            </div>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="time" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-bold">Horário</FormLabel>
-                      <FormControl><Input type="time" {...field} disabled className="bg-muted opacity-80 cursor-not-allowed font-semibold h-11" /></FormControl>
                     </FormItem>
                   )} />
                 </div>

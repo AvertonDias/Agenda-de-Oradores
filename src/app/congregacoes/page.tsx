@@ -59,7 +59,8 @@ import {
   FileSpreadsheet,
   BookOpen,
   Star,
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { HouseRoofIcon } from '@/components/icons';
 import { useToast } from '@/hooks/use-toast';
@@ -79,6 +80,8 @@ import { talkTopics } from '@/lib/talk-topics';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn, formatPhoneNumber, cleanRawNumber } from '@/lib/utils';
+import { JwImportBox } from '@/components/jw-import-box';
+import { fetchJwMeetingData, extractJwUrlInfo } from '@/lib/jw-import';
 import Link from 'next/link';
 import { 
   format, 
@@ -101,6 +104,7 @@ const congregationSchema = z.object({
   })).min(1, 'Adicione pelo menos um coordenador.'),
   meetingDay: z.string().min(1, 'O dia da reunião é obrigatório.'),
   meetingTime: z.string().min(1, 'O horário é obrigatório.').regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Formato de hora inválido (HH:mm)."),
+  jwUrl: z.string().optional(),
 });
 
 const speakerSchema = z.object({
@@ -244,7 +248,15 @@ export default function CongregacoesPage() {
     if (editingCongregation && isEditDialogOpen) {
       const schedule = editingCongregation.meetingSchedule || ''; 
       const [day, time] = schedule.split(',').map(s => s?.trim());
-      editForm.reset({ name: editingCongregation.name, address: editingCongregation.address, coordinates: editingCongregation.coordinates || '', coordinators: editingCongregation.coordinators || [{ name: '', phone: '' }], meetingDay: day || '', meetingTime: time || '' });
+      editForm.reset({ 
+        name: editingCongregation.name, 
+        address: editingCongregation.address, 
+        coordinates: editingCongregation.coordinates || '', 
+        coordinators: editingCongregation.coordinators || [{ name: '', phone: '' }], 
+        meetingDay: day || '', 
+        meetingTime: time || '',
+        jwUrl: editingCongregation.jwUrl || ''
+      });
     }
   }, [editingCongregation, isEditDialogOpen, editForm]);
 
@@ -258,32 +270,83 @@ export default function CongregacoesPage() {
   };
 
   const onSpeakerSubmit = (values: z.infer<typeof speakerSchema>) => {
-    if (!firestore || !myCong) return; setIsLoading(true);
-    const trimmed = values.name.trim(); if ((speakersData || []).some(s => s.id !== editingSpeaker?.id && s.name.toLowerCase() === trimmed.toLowerCase())) { toast({ variant: "destructive", title: "Erro", description: "Nome já cadastrado." }); setIsLoading(false); return; }
-    const dat = { name: trimmed, phoneNumber: values.phoneNumber?.trim() || '', availableTopics: values.availableTopics, homeCongregationId: values.homeCongregationId, onlyLocal: values.onlyLocal };
-    if (editingSpeaker) setDocumentNonBlocking(doc(firestore, 'congregations', myCong.id, 'speakers', editingSpeaker.id), dat, { merge: true });
-    else addDocumentNonBlocking(collection(firestore, 'congregations', myCong.id, 'speakers'), dat);
-    setIsSpeakerEditDialogOpen(false); setEditingSpeaker(null); setIsLoading(false); toast({ title: "Salvo!" });
+    if (!firestore || !myCong) return;
+    setIsLoading(true);
+    const trimmed = values.name.trim();
+
+    // Quando estiver editando, permite atualizar normalmente.
+    // Apenas ao cadastrar um novo orador, verifica se já existe na mesma congregação.
+    if (!editingSpeaker) {
+      const isDuplicate = (speakersData || []).some(
+        s => s.homeCongregationId === values.homeCongregationId &&
+             s.name.trim().toLowerCase() === trimmed.toLowerCase()
+      );
+      if (isDuplicate) {
+        toast({
+          variant: "destructive",
+          title: "Nome já cadastrado",
+          description: "Já existe um orador com este nome cadastrado nesta congregação."
+        });
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    const dat = {
+      name: trimmed,
+      phoneNumber: values.phoneNumber?.trim() || '',
+      availableTopics: values.availableTopics,
+      homeCongregationId: values.homeCongregationId,
+      onlyLocal: values.onlyLocal
+    };
+
+    if (editingSpeaker) {
+      setDocumentNonBlocking(doc(firestore, 'congregations', myCong.id, 'speakers', editingSpeaker.id), dat, { merge: true });
+    } else {
+      addDocumentNonBlocking(collection(firestore, 'congregations', myCong.id, 'speakers'), dat);
+    }
+
+    setIsSpeakerEditDialogOpen(false);
+    setEditingSpeaker(null);
+    setIsLoading(false);
+    toast({ title: "Orador salvo com sucesso!" });
   };
 
-  const parseJwData = (text: string, formType: 'add' | 'edit') => {
-    const lines = text.split(/\n|\s{2,}/).map(l => l.trim()).filter(l => l.length > 0); if (lines.length < 1) return;
-    let name = ''; let address = ''; let meetingDay = ''; let meetingTime = ''; let phone = ''; let coordinates = '';
-    const weekendDays = ['domingo', 'sábado', 'sabado'];
-    lines.forEach((line, index) => {
-      const lowerLine = line.toLowerCase();
-      if (index === 0) {
-        let pot = line; ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo', 'sabado'].forEach(d => { const i = pot.toLowerCase().indexOf(d); if (i !== -1) pot = pot.substring(0, i).trim(); });
-        name = pot.replace(/\s*-\s*$/, '').trim();
-      }
-      weekendDays.forEach(day => { if (lowerLine.includes(day)) { meetingDay = day.charAt(0).toUpperCase() + day.slice(1).replace('sabado', 'Sábado'); const tm = line.match(/(\d{1,2}:\d{2})/); if (tm) meetingTime = tm[1].padStart(5, '0'); } });
-      if (line.includes(',') && /\d/.test(line) && line.length > 15 && !line.match(/(-?\d+\.\d+)/)) address = line;
-      const ph = line.match(/(\d{2}[-\s]*9?\d{4}[-\s]?\d{4})|(\d{2}-9?\d{4}-9\d{4})/); if (ph && !phone) phone = ph[0];
-      const co = line.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/); if (co) coordinates = co[0];
-    });
+  const handleApplyJwData = (
+    data: {
+      name?: string;
+      address?: string;
+      meetingDay?: string;
+      meetingTime?: string;
+      coordinates?: string;
+      phoneNumbers?: string[];
+      jwUrl?: string;
+    },
+    formType: 'add' | 'edit'
+  ) => {
     const f = formType === 'add' ? addForm : editForm;
-    if (name) f.setValue('name', name); if (address) f.setValue('address', address); if (meetingDay) f.setValue('meetingDay', meetingDay); if (meetingTime) f.setValue('meetingTime', meetingTime); if (coordinates) f.setValue('coordinates', coordinates); if (phone) f.setValue('coordinators.0.phone', formatPhoneNumber(phone));
-    toast({ title: "Dados processados!" });
+    if (data.name) f.setValue('name', data.name);
+    if (data.address) f.setValue('address', data.address);
+    if (data.meetingDay) f.setValue('meetingDay', data.meetingDay);
+    if (data.meetingTime) f.setValue('meetingTime', data.meetingTime);
+    if (data.coordinates) f.setValue('coordinates', data.coordinates);
+    if (data.jwUrl) f.setValue('jwUrl', data.jwUrl);
+
+    if (data.phoneNumbers && data.phoneNumbers.length > 0) {
+      f.setValue('coordinators.0.phone', formatPhoneNumber(data.phoneNumbers[0]));
+      if (data.phoneNumbers.length > 1) {
+        const curCoords = f.getValues('coordinators') || [];
+        if (curCoords.length < 2) {
+          if (formType === 'add') {
+            addAppend({ name: '', phone: formatPhoneNumber(data.phoneNumbers[1]) });
+          } else {
+            editAppend({ name: '', phone: formatPhoneNumber(data.phoneNumbers[1]) });
+          }
+        } else {
+          f.setValue('coordinators.1.phone', formatPhoneNumber(data.phoneNumbers[1]));
+        }
+      }
+    }
   };
 
   const handlePickContact = async (index: number, formType: 'add' | 'edit' | 'speaker') => {
@@ -402,7 +465,8 @@ export default function CongregacoesPage() {
       address: values.address.trim(), 
       coordinates: values.coordinates?.trim() || '', 
       coordinators: values.coordinators.map(c => ({ name: (c.name || '').trim(), phone: (c.phone || '').trim() })), 
-      meetingSchedule: newMeetingSchedule 
+      meetingSchedule: newMeetingSchedule,
+      jwUrl: values.jwUrl?.trim() || ''
     };
     
     const ref = editingCongregation.id === myCong.id 
@@ -475,7 +539,14 @@ export default function CongregacoesPage() {
     if (!firestore || !myCong) return; setIsLoading(true);
     const trimmed = values.name.trim(); const dup = (neighborsData || []).some(n => n.name.toLowerCase() === trimmed.toLowerCase()) || myCong.name.toLowerCase() === trimmed.toLowerCase();
     if (dup) { toast({ variant: "destructive", title: "Nome já existe" }); setIsLoading(false); return; }
-    const n = { name: trimmed, address: values.address.trim(), coordinates: values.coordinates?.trim() || '', coordinators: values.coordinators.map(c => ({ name: (c.name || '').trim(), phone: (c.phone || '').trim() })), meetingSchedule: `${values.meetingDay}, ${values.meetingTime}` };
+    const n = { 
+      name: trimmed, 
+      address: values.address.trim(), 
+      coordinates: values.coordinates?.trim() || '', 
+      coordinators: values.coordinators.map(c => ({ name: (c.name || '').trim(), phone: (c.phone || '').trim() })), 
+      meetingSchedule: `${values.meetingDay}, ${values.meetingTime}`,
+      jwUrl: values.jwUrl?.trim() || ''
+    };
     addDocumentNonBlocking(collection(firestore, 'congregations', myCong.id, 'neighbors'), n); toast({ title: 'Sucesso!' }); setIsLoading(false); setIsAddDialogOpen(false); addForm.reset(); setRawJwData('');
   };
 
@@ -588,7 +659,11 @@ export default function CongregacoesPage() {
         <h1 className="text-lg font-semibold md:text-2xl font-headline">Congregações</h1>
         <div className="flex flex-col sm:flex-row gap-2 w-full md:w-fit">
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => { setIsAddDialogOpen(open); if (!open) { addForm.reset(); setRawJwData(''); } }}><DialogTrigger asChild><Button className="gap-2 bg-primary text-primary-foreground w-full md:w-fit h-11" type="button"><PlusCircle className="h-4 w-4" /> Adicionar Congregação</Button></DialogTrigger><DialogContent className="sm:max-w-[600px] w-[95vw] max-h-[95vh] overflow-y-auto shadow-2xl border-none"><DialogHeader><DialogTitle className="text-xl font-headline">Adicionar Congregação</DialogTitle></DialogHeader>
-            <div className="p-3 bg-muted/50 rounded-lg border border-dashed mb-3"><a href={getJwSearchUrl(addForm.watch('name'), addForm.watch('address'))} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-primary hover:underline">Importar do JW.org</a><Textarea placeholder="Cole aqui os dados..." className="text-[10px] h-20 mt-2" value={rawJwData} onChange={(e) => { setRawJwData(e.target.value); parseJwData(e.target.value, 'add'); }} /></div>
+            <JwImportBox
+              onApply={(data) => handleApplyJwData(data, 'add')}
+              currentName={addForm.watch('name')}
+              currentAddress={addForm.watch('address')}
+            />
             <Form {...addForm}><form onSubmit={addForm.handleSubmit(onAddSubmit)} className="space-y-3">
               <FormField control={addForm.control} name="name" render={({ field }) => (<FormItem><FormLabel className="text-sm font-bold">Nome</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>)} />
               <FormField control={addForm.control} name="address" render={({ field }) => (<FormItem><FormLabel className="text-sm font-bold">Endereço</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>)} />
@@ -678,7 +753,48 @@ export default function CongregacoesPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { setEditingCongregation(null); setRawJwData(''); } }}><DialogContent className="sm:max-w-[600px] w-[95vw] max-h-[95vh] overflow-y-auto shadow-2xl border-none"><DialogHeader className="relative"><DialogTitle className="text-xl font-headline">Editar {editingCongregation?.name}</DialogTitle></DialogHeader>
         <Tabs defaultValue="info" className="w-full"><TabsList className="grid w-full grid-cols-2 mb-3"><TabsTrigger value="info">Informações</TabsTrigger><TabsTrigger value="speakers">Oradores</TabsTrigger></TabsList>
           <TabsContent value="info">
-            <div className="p-3 bg-muted/50 rounded-lg border border-dashed mb-3"><a href={getJwSearchUrl(editForm.watch('name'), editForm.watch('address'))} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-primary hover:underline">Importar do JW.org</a><Textarea placeholder="Cole dados aqui..." className="text-[10px] h-20 mt-2" value={rawJwData} onChange={(e) => { setRawJwData(e.target.value); parseJwData(e.target.value, 'edit'); }} /></div>
+            {editingCongregation?.jwUrl && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 mb-3 h-10 font-semibold"
+                disabled={isLoading}
+                onClick={async () => {
+                  if (!editingCongregation.jwUrl) return;
+                  setIsLoading(true);
+                  try {
+                    const info = extractJwUrlInfo(editingCongregation.jwUrl);
+                    if (info && (info.scopeId || info.eventId)) {
+                      const res = await fetchJwMeetingData({ scopeId: info.scopeId, eventId: info.eventId });
+                      if (res.selectedMeeting) {
+                        handleApplyJwData({
+                          name: res.selectedMeeting.name,
+                          address: res.selectedMeeting.address,
+                          meetingDay: res.selectedMeeting.meetingDay,
+                          meetingTime: res.selectedMeeting.meetingTime,
+                          coordinates: res.selectedMeeting.coordinates,
+                          phoneNumbers: res.selectedMeeting.phones,
+                          jwUrl: editingCongregation.jwUrl,
+                        }, 'edit');
+                        toast({ title: 'Sincronizado com sucesso!', description: 'Dados atualizados do JW.org.' });
+                      }
+                    }
+                  } catch (err: any) {
+                    toast({ variant: 'destructive', title: 'Erro ao sincronizar', description: err?.message || 'Não foi possível atualizar.' });
+                  } finally {
+                    setIsLoading(false);
+                  }
+                }}
+              >
+                <Sparkles className="h-4 w-4" />
+                <span>🔄 Sincronizar dados automaticamente com JW.org</span>
+              </Button>
+            )}
+            <JwImportBox
+              onApply={(data) => handleApplyJwData(data, 'edit')}
+              currentName={editForm.watch('name')}
+              currentAddress={editForm.watch('address')}
+            />
             <Form {...editForm}><form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-3">
               <FormField control={editForm.control} name="name" render={({ field }) => (<FormItem><FormLabel className="text-sm font-bold">Nome</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>)} />
               <FormField control={editForm.control} name="address" render={({ field }) => (<FormItem><FormLabel className="text-sm font-bold">Endereço</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>)} />

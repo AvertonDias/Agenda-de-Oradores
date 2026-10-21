@@ -192,16 +192,44 @@ export default function OradoresPage() {
   const onSubmit = (values: z.infer<typeof speakerSchema>) => {
     if (!firestore || !myCong) return;
     const trimmedName = values.name.trim();
-    const isNameTaken = (speakers || []).some(s => s.id !== editingSpeaker?.id && s.name.toLowerCase() === trimmedName.toLowerCase());
-    if (isNameTaken) {
-      toast({ variant: "destructive", title: "Nome já existe", description: "Já existe um orador com este nome cadastrado." });
-      return;
+
+    // Quando estiver editando, permite atualizar normalmente.
+    // Apenas ao cadastrar um novo orador, verifica se já existe na mesma congregação.
+    if (!editingSpeaker) {
+      const isNameTaken = (speakers || []).some(
+        s => s.homeCongregationId === values.homeCongregationId &&
+             s.name.trim().toLowerCase() === trimmedName.toLowerCase()
+      );
+      if (isNameTaken) {
+        toast({
+          variant: "destructive",
+          title: "Nome já cadastrado",
+          description: "Já existe um orador com este nome cadastrado nesta congregação."
+        });
+        return;
+      }
     }
+
     setIsLoading(true);
-    const speakerData = { name: trimmedName, phoneNumber: (values.phoneNumber || '').trim(), homeCongregationId: values.homeCongregationId, availableTopics: values.availableTopics, onlyLocal: values.onlyLocal };
-    if (editingSpeaker) setDocumentNonBlocking(doc(firestore, 'congregations', myCong.id, 'speakers', editingSpeaker.id), speakerData, { merge: true });
-    else addDocumentNonBlocking(collection(firestore, 'congregations', myCong.id, 'speakers'), speakerData);
-    setIsLoading(false); setIsDialogOpen(false); setEditingSpeaker(null); form.reset(); toast({ title: 'Salvo!' });
+    const speakerData = {
+      name: trimmedName,
+      phoneNumber: (values.phoneNumber || '').trim(),
+      homeCongregationId: values.homeCongregationId,
+      availableTopics: values.availableTopics,
+      onlyLocal: values.onlyLocal
+    };
+
+    if (editingSpeaker) {
+      setDocumentNonBlocking(doc(firestore, 'congregations', myCong.id, 'speakers', editingSpeaker.id), speakerData, { merge: true });
+    } else {
+      addDocumentNonBlocking(collection(firestore, 'congregations', myCong.id, 'speakers'), speakerData);
+    }
+
+    setIsLoading(false);
+    setIsDialogOpen(false);
+    setEditingSpeaker(null);
+    form.reset();
+    toast({ title: 'Orador salvo com sucesso!' });
   };
 
   const handleCsvFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
